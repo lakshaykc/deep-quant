@@ -83,6 +83,7 @@ class BatchGenerator(object):
         if remove_outliers:
             outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs, self._stride)
             self._start_indices, self._end_indices = outlier.get_indices(method='normal')
+            self._reset_index_cursor()
 
     def _init_data(self, filename, config, validation=True, data=None, 
                    verbose=True):
@@ -189,6 +190,16 @@ class BatchGenerator(object):
         assert(num_batches > 0)
         self._batch_cache = [None]*num_batches
         self._batch_cursor = 0
+
+    def _reset_index_cursor(self):
+        """
+        Resets index cursor after outlier removal
+        :return:
+        """
+        batch_size = self._batch_size
+        num_batches = len(self._start_indices) // batch_size
+        self._index_cursor = [offset*num_batches for offset in range(batch_size)]
+        self._init_index_cursor = self._index_cursor[:]
 
     def _init_column_indices(self, config):
         """
