@@ -13,6 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import os
 import time
 import sys
@@ -25,6 +29,7 @@ import pandas as pd
 import scipy.stats as st
 import sklearn.preprocessing
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from utils.batch_utils import Outlier
 
 _MIN_SEQ_NORM = 10.0
 DEEP_QUANT_ROOT = os.environ['DEEP_QUANT_ROOT']
@@ -76,8 +81,8 @@ class BatchGenerator(object):
         self._config = config # save this around for train_batches() method
 
         if remove_outliers:
-            self._outlier_idx = self._get_outlier_idx()
-            self._remove_outlier_idx()
+            outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs, self._stride)
+            self._start_indices, self._end_indices = outlier.get_indices(method='normal')
 
     def _init_data(self, filename, config, validation=True, data=None, 
                    verbose=True):
@@ -107,66 +112,6 @@ class BatchGenerator(object):
         # Setup data
         self._init_column_indices(config)
         self._init_validation_set(config, validation, verbose)
-
-    def _remove_outlier_idx(self):
-        """
-        Removes the outlier indices collected from _get_outlier_idx
-        :return:
-        """
-        new_start_indices = []
-        new_end_indices = []
-
-        print("Indices before outlier: %i"%len(self._start_indices))
-
-        for i in range(len(self._start_indices)):
-            start_idx = self._start_indices[i]
-            end_idx = self._end_indices[i]
-            seq_outlier_status = False
-            num_steps = (end_idx - start_idx)//self._stride + 1
-            for cur_idx in [start_idx + step*self._stride for step in range(num_steps)]:
-                seq_outlier_status = seq_outlier_status or cur_idx in self._outlier_idx
-
-            if seq_outlier_status is False:
-                new_start_indices.append(start_idx)
-                new_end_indices.append(end_idx)
-
-        self._start_indices = new_start_indices
-        self._end_indices = new_end_indices
-        print("Indices after outliers removed: %i"%len(self._start_indices))
-
-    def _get_outlier_idx(self, confidence_interval=0.90):
-        """
-        Identifies the outlier indices
-        :return: List of indices where feature vector is an outlier
-        """
-        outlier_df = pd.DataFrame(index=self._data.index)
-        outlier_df['outlier'] = False
-        for i, gvkey in enumerate(self._data.gvkey.unique()):
-            if i%100 == 0:
-                print(i)
-            # Slice a local copy of the gvkey dataframe and identify outliers based on growth rates of oiadpq
-            df = self._data[[self._data.columns[x] for x in self._fin_colidxs]][self._data['gvkey'] == gvkey]
-            growth_rate = df['oiadpq_ttm']/df['oiadpq_ttm'].shift(periods=1)
-            growth_rate = growth_rate.fillna(0.0)
-            z_score = st.norm.ppf(confidence_interval)
-            std = np.std(growth_rate.values)
-            mean = np.nanmean(growth_rate.values)
-            growth_rt_outlier = [x < mean - z_score*std or x > mean + z_score*std for x in growth_rate.values]
-            growth_rt_outlier = pd.Series(growth_rt_outlier, index=growth_rate.index)
-
-            for ix in growth_rt_outlier.index:
-                # skip the first one in growth rate
-                if ix == growth_rt_outlier.index[0]:
-                    continue
-                elif growth_rt_outlier.index[0] < ix < growth_rt_outlier.index[-1]:
-                    # if the growth rates of two consecutive items are outliers, ix datapoint is outlier
-                    if growth_rt_outlier[ix] and growth_rt_outlier[ix + 1]:
-                        outlier_df.loc[ix, 'outlier'] = True
-                else:
-                    if growth_rt_outlier[ix]:
-                        outlier_df[ix, 'outlier'] = True
-
-        return outlier_df[outlier_df['outlier'] == True].index
 
     def _init_batch_cursor(self, config, require_targets=True, verbose=True):
         """
@@ -334,9 +279,9 @@ class BatchGenerator(object):
         assert(config.target_idx >= 0)
 
         # Set up fin_inputs attribute and aux_inputs attribute
-        self._fin_inputs  = self._data.iloc[:, self._fin_colidxs].as_matrix()
-        self._aux_inputs  = self._data.iloc[:, self._aux_colidxs].as_matrix()
-        self._normalizers = self._data.iloc[:, self._normalizer_idx].as_matrix()
+        self._fin_inputs  = self._data.iloc[:, self._fin_colidxs].values
+        self._aux_inputs  = self._data.iloc[:, self._aux_colidxs].values
+        self._normalizers = self._data.iloc[:, self._normalizer_idx].values
 
     def _init_validation_set(self, config, validation, verbose=True):
         """
