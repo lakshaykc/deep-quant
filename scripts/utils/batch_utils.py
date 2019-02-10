@@ -11,12 +11,13 @@ import scipy.stats as st
 class Outlier(object):
     """ Outlier class to detect and remove outliers"""
 
-    def __init__(self, data, start_indices, end_indices, fin_colidxs, stride):
+    def __init__(self, data, start_indices, end_indices, fin_colidxs, stride, confidence_level):
         self._data = data
         self._start_indices = start_indices
         self._end_indices = end_indices
         self._fin_colidxs = fin_colidxs
         self._stride = stride
+        self.confidence_level = confidence_level
 
     def _get_outlier_idxs(self, method):
         """
@@ -25,7 +26,7 @@ class Outlier(object):
         :return: List of indices of outliers
         """
         if method == 'normal':
-            return self._normal_method(confidence_interval=0.975)
+            return self._normal_method(confidence_level=self.confidence_level)
         else:
             raise ValueError("Invalid method name or other methods haven't been defined yet")
 
@@ -58,7 +59,7 @@ class Outlier(object):
         print("Indices after outliers removed: %i" % len(self._start_indices))
         return self._start_indices, self._end_indices
 
-    def _normal_method(self, confidence_interval=0.95):
+    def _normal_method(self, confidence_level=0.95):
         """
         Identifies the outlier based on normal distribution and confidence level
         :return: List of indices where feature vector is an outlier
@@ -82,7 +83,7 @@ class Outlier(object):
                 continue
 
             # Calculate the outliers based on z-score
-            z_score = st.norm.ppf(confidence_interval)
+            z_score = st.norm.ppf(confidence_level)
             std = np.std(growth_rate.values)
             mean = np.mean(growth_rate.values)
             growth_rt_outlier = [x < mean - z_score * std or x > mean + z_score * std for x in growth_rate.values]

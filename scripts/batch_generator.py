@@ -81,7 +81,8 @@ class BatchGenerator(object):
         self._config = config # save this around for train_batches() method
 
         if remove_outliers:
-            outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs, self._stride)
+            outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
+                              self._stride, self._config.outlier_conf_lvl)
             self._start_indices, self._end_indices = outlier.get_indices(method='normal')
             self._reset_index_cursor()
 

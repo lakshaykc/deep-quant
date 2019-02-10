@@ -118,6 +118,7 @@ def get_configs():
     configs.DEFINE_float("confidence_alpha", 0.1, "Alpha used for calculating confidence level (= 1 - alpha)")
     configs.DEFINE_boolean("huber_loss", False, "Use huber loss instead of mse")
     configs.DEFINE_float("huber_delta", 1.0, "delta for huber loss")
+    configs.DEFINE_float("outlier_conf_lvl", 0.975, "Outlier confidence level")
 
     c = configs.ConfigValues()
 
