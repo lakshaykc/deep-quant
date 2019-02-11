@@ -296,7 +296,10 @@ class BatchGenerator(object):
         # Set up fin_inputs attribute and aux_inputs attribute
         self._fin_inputs  = self._data.iloc[:, self._fin_colidxs].values
         self._aux_inputs  = self._data.iloc[:, self._aux_colidxs].values
-        self._normalizers = self._data.iloc[:, self._normalizer_idx].values
+        if self._normalizer_idx is not None:
+            self._normalizers = self._data.iloc[:, self._normalizer_idx].values
+        else:
+            self._normalizers = np.linalg.norm(self._fin_inputs, axis=1)
 
     def _init_validation_set(self, config, validation, verbose=True):
         """
