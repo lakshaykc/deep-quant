@@ -161,7 +161,7 @@ class BatchGenerator(object):
                 pred_key = data.iat[i+forecast_n, self._key_idx]
             else:
                 pred_key = ""
-            active = True if int(data.iat[i,self._active_idx]) else False
+            active = True if int(data.iat[i, self._active_idx]) else False
             date = data.iat[i,self._date_idx]
             if key != last_key:
                 cur_length = 1
@@ -271,7 +271,10 @@ class BatchGenerator(object):
         self._key_idx = colnames.index(config.key_field)
         self._active_idx = colnames.index(config.active_field)
         self._date_idx = colnames.index(config.date_field)
-        self._normalizer_idx = colnames.index(config.scale_field)
+        if config.scale_field == '__norm__':
+            self._normalizer_idx = None
+        else:
+            self._normalizer_idx = colnames.index(config.scale_field)
 
         # Set up input-related attributes
         self._num_inputs = config.num_inputs = len(self._feature_names)
