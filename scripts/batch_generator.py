@@ -83,7 +83,7 @@ class BatchGenerator(object):
         if remove_outliers:
             outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
                               self._stride, self._config.outlier_conf_lvl, self._config.outlier_window)
-            self._start_indices, self._end_indices = outlier.get_indices(method='normal')
+            self._start_indices, self._end_indices = outlier.get_indices(method='rolling_stationary')
             self._reset_index_cursor()
 
     def _init_data(self, filename, config, validation=True, data=None, 
