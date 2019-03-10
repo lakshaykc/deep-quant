@@ -80,12 +80,14 @@ class BatchGenerator(object):
         self._init_batch_cursor(config, require_targets, verbose)
         self._config = config # save this around for train_batches() method
 
+        self.outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
+                               self._stride, self._config.outlier_conf_lvl, self._config.outlier_window,
+                               self._start_date, self._end_date, self._max_unrollings)
+
         if remove_outliers:
             print("Removing outliers for training")
-            outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
-                              self._stride, self._config.outlier_conf_lvl, self._config.outlier_window)
             idxs_before_removal = 1.*len(self._start_indices)
-            self._start_indices, self._end_indices = outlier.get_indices(method=self._config.outlier_method)
+            self._start_indices, self._end_indices = self.outlier.get_indices(method=self._config.outlier_method)
             self._reset_index_cursor()
 
             print("Frac of points removed: %2.2f" % (1.0 - len(self._start_indices)/idxs_before_removal))
@@ -669,10 +671,7 @@ class BatchGenerator(object):
         This is only active for predictions
         :return: lower_bound_df, upper_bound_df
         """
-        outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
-                          self._stride, self._config.outlier_conf_lvl, self._config.outlier_window)
-
-        return outlier.get_outlier_bounds_for_preds()
+        return self.outlier.get_outlier_bounds_for_preds()
 
     @property
     def feature_names(self):

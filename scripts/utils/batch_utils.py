@@ -11,7 +11,8 @@ import scipy.stats as st
 class Outlier(object):
     """ Outlier class to detect and remove outliers"""
 
-    def __init__(self, data, start_indices, end_indices, fin_colidxs, stride, confidence_level, window=None):
+    def __init__(self, data, start_indices, end_indices, fin_colidxs, stride, confidence_level, window,
+                 start_date, end_date, max_unrollings):
         self._data = data
         self._start_indices = start_indices
         self._end_indices = end_indices
@@ -23,6 +24,30 @@ class Outlier(object):
         self.outlier_df = pd.DataFrame(index=self._data.index)
         self.outlier_arr = [False] * len(self._data.index)
         self.fin_col_df = self._data[[self._data.columns[x] for x in self._fin_colidxs]]
+
+        # Trim the data outside the date ranges
+        self._trim_data(start_date, end_date, max_unrollings)
+
+    def _trim_data(self, start_date, end_date, max_unrollings):
+        """
+        Trims the data to keep only the data within the start and end dates of training or prediction
+        :param start_date:
+        :param end_date:
+        :param max_unrollings:
+        :return:
+        """
+        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
+        # 'datadate' format intact
+        self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
+
+        start_date = pd.to_datetime(start_date, format="%Y%m")
+        # Offset the start date to include the data corresponding to max_unrollings which is required as input data
+        start_date_offset = start_date - pd.DateOffset(years=max_unrollings)
+        end_date = pd.to_datetime(end_date, format="%Y%m")
+
+        # Filter the data according to the dates
+        self._data = self._data[self._data.datadate_obj >= start_date_offset]
+        self._data = self._data[self._data.datadate_obj <= end_date]
 
     def _get_outlier_idxs(self, method):
         """
@@ -233,10 +258,6 @@ class Outlier(object):
         :return: [lower_bound_dataframe, upper_bound_dataframe]
         """
 
-        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
-        # 'datadate' format intact
-        self._data['datadate_obj'] = pd.to_datetime(self._data['datadate'], format="%Y%m")
-
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
         df_lb = pd.DataFrame(columns=unique_gvkeys)
@@ -254,7 +275,7 @@ class Outlier(object):
                 t = time.time()
 
             # Slice a local copy of the gvkey dataframe and identify outliers based on growth rates of oiadpq
-            df_gvkey = self._data[['datadate_obj', 'gvkey']][self._data['gvkey'] == gvkey]
+            df_gvkey = self._data[['datadate_obj', 'gvkey', 'oiadpq_ttm']][self._data['gvkey'] == gvkey]
             df_gvkey = df_gvkey.set_index('datadate_obj', drop=True)
             growth_rate = df_gvkey['oiadpq_ttm'] / df_gvkey['oiadpq_ttm'].shift(periods=1)
             # Get mean excluding nan, inf
