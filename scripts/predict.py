@@ -62,10 +62,14 @@ def predict(config):
     tf_config = tf.ConfigProto( allow_soft_placement=True  ,
                                 log_device_placement=False )
 
+    # Get LB and UB outlier dataframes for all data
+    df_outlier_lb, df_outlier_ub = batches.get_outlier_bounds()
+
     # Initialize DataFrames
     df_target = pd.DataFrame()
     df_output = pd.DataFrame()
     df_mse = pd.DataFrame()
+    df_outlier = pd.DataFrame()
 
     df_list = [df_target, df_output, df_mse]
 
@@ -81,9 +85,10 @@ def predict(config):
             (mse, preds) = model.step(session, batch,keep_prob=config.keep_prob_pred)
             # (mse, preds) = model.debug_step(session, batch)
 
+            date = batch_to_date(batch)
+            key = batch_to_key(batch)
+
             if math.isnan(mse) is False:
-                date = batch_to_date(batch)
-                key = batch_to_key(batch)
                 if date not in perfs:
                     perfs[date] = list()
                 perfs[date].append(mse)
@@ -95,17 +100,36 @@ def predict(config):
 
             # Get values and update DataFrames if df_dirname is provided in config
             if config.df_dirname is not None:
-                if not math.isnan(mse):
-                    # Get all values
-                    target_val = get_value(batches, batch, 'target')
-                    output_val = get_value(batches, batch, 'output', preds)
-                    mse_val = mse
-                    values_list = [target_val, output_val, mse_val]
+                # Get all values
+                target_val = get_value(batches, batch, 'target')
+                output_val = get_value(batches, batch, 'output', preds)
+                mse_val = mse
+                values_list = [target_val, output_val, mse_val]
 
-                    # Update DataFrames
-                    for j in range(len(df_list)):
-                        assert(len(df_list) == len(values_list))
-                        df_list[j] = update_df(df_list[j], date, key, values_list[j])
+                # Update DataFrames
+                for j in range(len(df_list)):
+                    assert(len(df_list) == len(values_list))
+                    df_list[j] = update_df(df_list[j], date, key, values_list[j])
+
+                    # Update the outlier df by checking output_val
+                    if j == 1:
+                        df_outlier = update_outlier_df(df_outlier, date, key, output_val,
+                                                       df_outlier_lb, df_outlier_ub)
+
+        # MSE calculation with outlier removal
+        df_mse = df_mse.mask(df_outlier, other=np.nan)
+        mse_date_series = df_mse.mean(axis=1)
+        total_mse = mse_date_series.mean()
+
+        # Save mse data to file
+        if config.df_dirname:
+            mse_dirname = 'mse-' + config.df_dirname
+            if not os.path.isdir(mse_dirname):
+                os.makedirs(mse_dirname)
+            mse_date_series.to_csv(os.path.join(mse_dirname, 'date-mse.csv'))
+
+            with open(os.path.join(mse_dirname, 'date-mse.csv'), 'a+') as f:
+                f.write(str(total_mse))
 
         # Save the DataFrames
         if config.df_dirname:
@@ -199,6 +223,16 @@ def update_df(df, date, key, value):
     """
     date = pd.to_datetime(date, format="%Y%m")
     df.loc[date, key] = value
+    return df
+
+
+def update_outlier_df(df, date, key, output_value, df_outlier_lb, df_outlier_ub):
+    date = pd.to_datetime(date, format="%Y%m")
+    if df_outlier_lb[date, key] <= output_value <= df_outlier_ub[date, key]:
+        df.loc[date, key] = False
+    else:
+        df.loc[date, key] = True
+
     return df
 
 

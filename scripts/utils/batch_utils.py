@@ -195,7 +195,12 @@ class Outlier(object):
             # which is for the whole series and not just the window size
 
             # Rolling std
-            std = residuals.rolling(window, min_periods=1).std()
+            std = residuals.rolling(window).std()
+            # If min_periods is not defined, there will NaNs as the window size hasn't been reached.
+            # Lower and upper bounds for these values should be accomodative and not mark these points
+            # as outliers. There isn't enough data for it. Hence std is set to very large value
+            std = std.fillna(1e12)
+
             growth_rate = growth_rate.fillna(1e8)
             growth_rt_outlier = [y < mean - z_score * std or y > mean + z_score * std for y, mean, std in
                                  zip(growth_rate.values, growth_rate_rolling_mean.values, std.values)]
@@ -215,3 +220,80 @@ class Outlier(object):
         :return: start_indices, end_indices
         """
         return self._remove_outlier(method=method)
+
+    def get_outlier_bounds_for_preds(self, confidence_level=0.975, window=3, std_type='expanding'):
+        """
+        Determines upper and lower bounds for outlier detection based on the history of target field. For every date
+        and gvkey, growth rates of the target fields are used to create the bounds using rolling stationary method.
+        The history goes as far as window_size * stride
+
+         Returns dataframes for lower and and upper bounds with dates as index and gvkeys as column names (similar to
+         output dataframes used during prediction)
+
+        :return: [lower_bound_dataframe, upper_bound_dataframe]
+        """
+
+        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
+        # 'datadate' format intact
+        self._data['datadate_obj'] = pd.to_datetime(self._data['datadate'], format="%Y%m")
+
+        # Get gvkeys
+        unique_gvkeys = self._data.gvkey.unique()
+        df_lb = pd.DataFrame(columns=unique_gvkeys)
+        df_ub = pd.DataFrame(columns=unique_gvkeys)
+
+        # Parameters for rolling calculations and outliers
+        window = int(self._stride * window)
+        z_score = st.norm.ppf(confidence_level)
+
+        t = time.time()
+        print("Running outlier analysis for predictions ...")
+        for i, gvkey in enumerate(unique_gvkeys):
+            if i % 100 == 0:
+                print(i, time.time() - t)
+                t = time.time()
+
+            # Slice a local copy of the gvkey dataframe and identify outliers based on growth rates of oiadpq
+            df_gvkey = self._data[['datadate_obj', 'gvkey']][self._data['gvkey'] == gvkey]
+            df_gvkey = df_gvkey.set_index('datadate_obj', drop=True)
+            growth_rate = df_gvkey['oiadpq_ttm'] / df_gvkey['oiadpq_ttm'].shift(periods=1)
+            # Get mean excluding nan, inf
+            reduced_gr = growth_rate[~growth_rate.isin([np.nan, np.inf, -np.inf])]
+            mean = reduced_gr.mean()
+            growth_rate = growth_rate.fillna(mean)
+
+            # Replace inf and -inf with large value as they are likely to be outliers. They should NOT be ignored
+            growth_rate = growth_rate.replace(np.inf, np.nan)
+            growth_rate = growth_rate.replace(-np.inf, np.nan)
+
+            if growth_rate.size <= 1:
+                continue
+
+            # rolling computations
+            growth_rate_rolling_mean = growth_rate.rolling(window, min_periods=1).mean()
+            residuals = growth_rate - growth_rate_rolling_mean
+
+            if std_type == 'expanding':
+                std = residuals.expanding(window).std()
+            elif std_type == 'rolling':
+                std = residuals.rolling(window).std()
+
+            # Fill the NaNs with extreme large or small values as they are upper and lower bounds
+            std = std.fillna(1e12)
+
+            # Create the lb, ub series
+            lb_series = growth_rate_rolling_mean - z_score*std
+            ub_series = growth_rate_rolling_mean + z_score*std
+
+            # Convert series to dataframe
+            df_gvkey_lb, df_gvkey_ub = lb_series.to_frame(), ub_series.to_frame()
+
+            # Concatenate to the main dataframe
+            df_lb = pd.concat([df_lb, df_gvkey_lb], axis=1)
+            df_ub = pd.concat([df_ub, df_gvkey_ub], axis=1)
+
+        return df_lb, df_ub
+
+
+
+

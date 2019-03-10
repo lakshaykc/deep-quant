@@ -83,8 +83,11 @@ class BatchGenerator(object):
         if remove_outliers:
             outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
                               self._stride, self._config.outlier_conf_lvl, self._config.outlier_window)
-            self._start_indices, self._end_indices = outlier.get_indices(method='rolling_stationary')
+            idxs_before_removal = 1.*len(self._start_indices)
+            self._start_indices, self._end_indices = outlier.get_indices(method=self._config.outlier_method)
             self._reset_index_cursor()
+
+            print("Frac of points removed: %2.2f" % (1.0 - len(self._start_indices)/idxs_before_removal))
 
     def _init_data(self, filename, config, validation=True, data=None, 
                    verbose=True):
@@ -233,6 +236,7 @@ class BatchGenerator(object):
                         target is specified by config.
         """
         assert config.financial_fields
+
         def get_colidxs_from_colnames(data, columns):
             """
             Returns indexes of columns of data that are included in columns.
@@ -646,7 +650,6 @@ class BatchGenerator(object):
         return BatchGenerator("", config, validation=False,
                               data=valid_data, remove_outliers=True)
 
-
     def shuffle(self):
         # We cannot shuffle until the entire dataset is cached
         if (self._batch_cache[-1] is not None):
@@ -658,6 +661,17 @@ class BatchGenerator(object):
         Resets _batch_cursor index to ensure we're working with the first batch.
         """
         self._batch_cusror = 0
+
+    def get_outlier_bounds(self):
+        """
+        Returns the dataframes for lower and upper bounds to determine if a prediction is an outlier or not.
+        This is only active for predictions
+        :return: lower_bound_df, upper_bound_df
+        """
+        outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
+                          self._stride, self._config.outlier_conf_lvl, self._config.outlier_window)
+
+        return outlier.get_outlier_bounds_for_preds()
 
     @property
     def feature_names(self):
@@ -682,6 +696,7 @@ class BatchGenerator(object):
     @property
     def num_outputs(self):
         return self._num_outputs
+
 
 class Batch(object):
     def __init__(self, inputs, targets, attribs, normalizers, seq_lengths):
