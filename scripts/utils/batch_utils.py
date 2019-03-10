@@ -20,34 +20,13 @@ class Outlier(object):
         self._stride = stride
         self.confidence_level = confidence_level
         self.window = window
+        self._start_date = start_date
+        self._end_date = end_date
+        self._max_unrollings = max_unrollings
 
         self.outlier_df = pd.DataFrame(index=self._data.index)
         self.outlier_arr = [False] * len(self._data.index)
         self.fin_col_df = self._data[[self._data.columns[x] for x in self._fin_colidxs]]
-
-        # Trim the data outside the date ranges
-        self._trim_data(start_date, end_date, max_unrollings)
-
-    def _trim_data(self, start_date, end_date, max_unrollings):
-        """
-        Trims the data to keep only the data within the start and end dates of training or prediction
-        :param start_date:
-        :param end_date:
-        :param max_unrollings:
-        :return:
-        """
-        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
-        # 'datadate' format intact
-        self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
-
-        start_date = pd.to_datetime(start_date, format="%Y%m")
-        # Offset the start date to include the data corresponding to max_unrollings which is required as input data
-        start_date_offset = start_date - pd.DateOffset(years=max_unrollings)
-        end_date = pd.to_datetime(end_date, format="%Y%m")
-
-        # Filter the data according to the dates
-        self._data = self._data[self._data.datadate_obj >= start_date_offset]
-        self._data = self._data[self._data.datadate_obj <= end_date]
 
     def _get_outlier_idxs(self, method):
         """
@@ -258,6 +237,9 @@ class Outlier(object):
         :return: [lower_bound_dataframe, upper_bound_dataframe]
         """
 
+        # Trim the data outside the date ranges
+        self._data = self._trim_data(self._data, self._start_date, self._end_date, self._max_unrollings)
+
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
         df_lb = pd.DataFrame(columns=unique_gvkeys)
@@ -315,6 +297,26 @@ class Outlier(object):
 
         return df_lb, df_ub
 
+    @staticmethod
+    def _trim_data(data, start_date, end_date, max_unrollings):
+        """
+        Trims the data to keep only the data within the start and end dates of training or prediction
+        :param start_date:
+        :param end_date:
+        :param max_unrollings:
+        :return:
+        """
+        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
+        # 'datadate' format intact
+        data['datadate_obj'] = pd.to_datetime(data['date'], format="%Y%m")
 
+        start_date = pd.to_datetime(start_date, format="%Y%m")
+        # Offset the start date to include the data corresponding to max_unrollings which is required as input data
+        start_date_offset = start_date - pd.DateOffset(years=max_unrollings)
+        end_date = pd.to_datetime(end_date, format="%Y%m")
 
+        # Filter the data according to the dates
+        data = data[data.datadate_obj >= start_date_offset]
+        data = data[data.datadate_obj <= end_date]
 
+        return data
