@@ -81,6 +81,7 @@ class BatchGenerator(object):
         self._config = config # save this around for train_batches() method
 
         if remove_outliers:
+            print("Removing outliers for training")
             outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
                               self._stride, self._config.outlier_conf_lvl, self._config.outlier_window)
             idxs_before_removal = 1.*len(self._start_indices)
