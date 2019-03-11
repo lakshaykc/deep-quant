@@ -64,6 +64,8 @@ def predict(config):
 
     # Get LB and UB outlier dataframes for all data
     df_outlier_lb, df_outlier_ub = batches.get_outlier_bounds()
+    df_outlier_lb.to_pickle('df_outlier_lb.pkl')
+    df_outlier_ub.to_pickle('df_outlier_ub.pkl')
 
     # Initialize DataFrames
     df_target = pd.DataFrame()
@@ -119,8 +121,6 @@ def predict(config):
         # MSE calculation with outlier removal
         df_outlier.to_pickle('df_outlier.pkl')
         df_mse.to_pickle('df_mse.pkl')
-        df_outlier_lb.to_pickle('df_outlier_lb.pkl')
-        df_outlier_ub.to_pickle('df_outlier_ub.pkl')
 
         df_outlier = df_outlier.fillna(False)
         df_mse = df_mse.mask(df_outlier, other=np.nan)
