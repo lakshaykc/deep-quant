@@ -117,6 +117,12 @@ def predict(config):
                                                        df_outlier_lb, df_outlier_ub)
 
         # MSE calculation with outlier removal
+        df_outlier.to_pickle('df_outlier.pkl')
+        df_mse.to_pickle('df_mse.pkl')
+        df_outlier_lb.to_pickle('df_outlier_lb.pkl')
+        df_outlier_ub.to_pickle('df_outlier_ub.pkl')
+
+        df_outlier = df_outlier.fillna(False)
         df_mse = df_mse.mask(df_outlier, other=np.nan)
         mse_date_series = df_mse.mean(axis=1)
         total_mse = mse_date_series.mean()

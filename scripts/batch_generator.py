@@ -30,6 +30,7 @@ import scipy.stats as st
 import sklearn.preprocessing
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from utils.batch_utils import Outlier
+from glob import glob
 
 _MIN_SEQ_NORM = 10.0
 DEEP_QUANT_ROOT = os.environ['DEEP_QUANT_ROOT']
@@ -90,7 +91,7 @@ class BatchGenerator(object):
             self._start_indices, self._end_indices = self.outlier.get_indices(method=self._config.outlier_method)
             self._reset_index_cursor()
 
-            print("Frac of points removed: %2.2f" % (1.0 - len(self._start_indices)/idxs_before_removal))
+            print("Frac of points removed: %2.4f" % (1.0 - len(self._start_indices)/idxs_before_removal))
 
     def _init_data(self, filename, config, validation=True, data=None, 
                    verbose=True):
@@ -671,7 +672,19 @@ class BatchGenerator(object):
         This is only active for predictions
         :return: lower_bound_df, upper_bound_df
         """
-        return self.outlier.get_outlier_bounds_for_preds()
+
+        # Check if outlier bounds are already saved in _cache and if not create one
+        cache_dir = "_outlier_cache"
+        if os.path.isdir(cache_dir):
+            lb_df, ub_df = pickle.load(open(glob(cache_dir + '/*')), 'rb')
+        else:
+            lb_df, ub_df = self.outlier.get_outlier_bounds_for_preds()
+            os.makedirs(cache_dir)
+            fname = 'ocache--' + self._config.datafile + '--' + str(self._config.start_date) + '--' + \
+                    str(self._config.end_date) + str(self._config.outlier_conf_lvl) + '.pkl'
+            pickle.dump((lb_df, ub_df), open(os.path.join(cache_dir, fname), 'wb'))
+
+        return lb_df, ub_df
 
     @property
     def feature_names(self):
