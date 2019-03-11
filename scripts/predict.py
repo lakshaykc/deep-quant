@@ -228,7 +228,7 @@ def update_df(df, date, key, value):
 
 def update_outlier_df(df, date, key, output_value, df_outlier_lb, df_outlier_ub):
     date = pd.to_datetime(date, format="%Y%m")
-    if df_outlier_lb[date, key] <= output_value <= df_outlier_ub[date, key]:
+    if df_outlier_lb.loc[date, key] <= output_value <= df_outlier_ub.loc[date, key]:
         df.loc[date, key] = False
     else:
         df.loc[date, key] = True

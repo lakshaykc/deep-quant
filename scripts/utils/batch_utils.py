@@ -28,6 +28,10 @@ class Outlier(object):
         self.outlier_arr = [False] * len(self._data.index)
         self.fin_col_df = self._data[[self._data.columns[x] for x in self._fin_colidxs]]
 
+        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
+        # 'datadate' format intact
+        self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
+
     def _get_outlier_idxs(self, method):
         """
         Returns indices of outliers specified via method.
@@ -238,7 +242,11 @@ class Outlier(object):
         """
 
         # Trim the data outside the date ranges
+        print("Before ...")
+        print(self._data.shape)
         self._data = self._trim_data(self._data, self._start_date, self._end_date, self._max_unrollings)
+        print("After ...")
+        print(self._data.shape)
 
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
@@ -306,9 +314,6 @@ class Outlier(object):
         :param max_unrollings:
         :return:
         """
-        # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
-        # 'datadate' format intact
-        data['datadate_obj'] = pd.to_datetime(data['date'], format="%Y%m")
 
         start_date = pd.to_datetime(start_date, format="%Y%m")
         # Offset the start date to include the data corresponding to max_unrollings which is required as input data
