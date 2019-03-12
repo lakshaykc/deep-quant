@@ -229,7 +229,7 @@ class Outlier(object):
         """
         return self._remove_outlier(method=method)
 
-    def get_outlier_bounds_for_preds(self, confidence_level=0.975, window=3, std_type='expanding'):
+    def get_outlier_bounds_for_preds(self, confidence_level=0.995, window=3, std_type='expanding'):
         """
         Determines upper and lower bounds for outlier detection based on the history of target field. For every date
         and gvkey, growth rates of the target fields are used to create the bounds using rolling stationary method.
@@ -250,8 +250,9 @@ class Outlier(object):
 
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
-        df_lb = pd.DataFrame(columns=unique_gvkeys)
-        df_ub = pd.DataFrame(columns=unique_gvkeys)
+        print(unique_gvkeys.shape)
+        df_lb = pd.DataFrame()
+        df_ub = pd.DataFrame()
 
         # Parameters for rolling calculations and outliers
         window = int(self._stride * window)
@@ -267,15 +268,16 @@ class Outlier(object):
             # Slice a local copy of the gvkey dataframe and identify outliers based on growth rates of oiadpq
             df_gvkey = self._data[['datadate_obj', 'gvkey', 'oiadpq_ttm']][self._data['gvkey'] == gvkey]
             df_gvkey = df_gvkey.set_index('datadate_obj', drop=True)
-            growth_rate = df_gvkey['oiadpq_ttm'] / df_gvkey['oiadpq_ttm'].shift(periods=1)
+            output_series = df_gvkey['oiadpq_ttm']
+            growth_rate = (df_gvkey['oiadpq_ttm'] / df_gvkey['oiadpq_ttm'].shift(periods=1)) - 1.
             # Get mean excluding nan, inf
             reduced_gr = growth_rate[~growth_rate.isin([np.nan, np.inf, -np.inf])]
             mean = reduced_gr.mean()
             growth_rate = growth_rate.fillna(mean)
 
             # Replace inf and -inf with large value as they are likely to be outliers. They should NOT be ignored
-            growth_rate = growth_rate.replace(np.inf, np.nan)
-            growth_rate = growth_rate.replace(-np.inf, np.nan)
+            growth_rate = growth_rate.replace(np.inf, mean)
+            growth_rate = growth_rate.replace(-np.inf, mean)
 
             if growth_rate.size <= 1:
                 continue
@@ -283,18 +285,24 @@ class Outlier(object):
             # rolling computations
             growth_rate_rolling_mean = growth_rate.rolling(window, min_periods=1).mean()
             residuals = growth_rate - growth_rate_rolling_mean
+            residuals = residuals.abs()
 
             if std_type == 'expanding':
                 std = residuals.expanding(window).std()
             elif std_type == 'rolling':
                 std = residuals.rolling(window).std()
 
-            # Fill the NaNs with extreme large or small values as they are upper and lower bounds
-            std = std.fillna(1e12)
+            # Create the lb, ub growth series
+            lb_gr_series = growth_rate_rolling_mean - z_score * std
+            ub_gr_series = growth_rate_rolling_mean + z_score * std
 
-            # Create the lb, ub series
-            lb_series = growth_rate_rolling_mean - z_score*std
-            ub_series = growth_rate_rolling_mean + z_score*std
+            # Apply growth rate to output values to create lower and upper bounds for outputs
+            base_output_series = output_series.shift(periods=1)
+            lb_series = base_output_series + base_output_series.abs() * lb_gr_series
+            ub_series = base_output_series + base_output_series.abs() * ub_gr_series
+
+            # Rename the series
+            lb_series, ub_series = lb_series.rename(gvkey), ub_series.rename(gvkey)
 
             # Convert series to dataframe
             df_gvkey_lb, df_gvkey_ub = lb_series.to_frame(), ub_series.to_frame()
@@ -302,6 +310,9 @@ class Outlier(object):
             # Concatenate to the main dataframe
             df_lb = pd.concat([df_lb, df_gvkey_lb], axis=1)
             df_ub = pd.concat([df_ub, df_gvkey_ub], axis=1)
+
+        df_lb = df_lb.fillna(-np.inf)
+        df_ub = df_ub.fillna(np.inf)
 
         return df_lb, df_ub
 
