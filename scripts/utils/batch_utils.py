@@ -32,13 +32,6 @@ class Outlier(object):
         # 'datadate' format intact
         self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
 
-        # Trim the data outside the date ranges
-        print("Before trim, data shape:")
-        print(self._data.shape)
-        self._data = self._trim_data(self._data, self._start_date, self._end_date, self._max_unrollings)
-        print("After trim, data shape:")
-        print(self._data.shape)
-
     def _get_output_series(self, gvkey):
         """
         Returns pandas series for the given output (oiadpq_ttm) for the gvkey
@@ -135,6 +128,13 @@ class Outlier(object):
 
         :return: [lower_bound_dataframe, upper_bound_dataframe]
         """
+
+        # Trim the data outside the date ranges
+        print("Before trim, data shape:")
+        print(self._data.shape)
+        self._data = self._trim_data(self._data, self._start_date, self._end_date, self._max_unrollings)
+        print("After trim, data shape:")
+        print(self._data.shape)
 
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
