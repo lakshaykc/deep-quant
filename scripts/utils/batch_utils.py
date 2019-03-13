@@ -61,26 +61,26 @@ class Outlier(object):
                 print(i, time.time() - t)
                 t = time.time()
 
-                output_series = self._get_output_series(gvkey=gvkey)
+            output_series = self._get_output_series(gvkey=gvkey)
 
-                roll_mean = output_series.rolling(window, min_periods=1).mean()
-                dev = z_score * output_series.rolling(window).std()
+            roll_mean = output_series.rolling(window, min_periods=1).mean()
+            dev = z_score * output_series.rolling(window).std()
 
-                # Identify outliers based on lb and ub
-                lb_series = roll_mean - dev
-                ub_series = roll_mean + dev
+            # Identify outliers based on lb and ub
+            lb_series = roll_mean - dev
+            ub_series = roll_mean + dev
 
-                # Fill NaNs with inf values so the output values are not rejected as outliers
-                lb_series = lb_series.fillna(-np.inf)
-                ub_series = ub_series.fillna(np.inf)
+            # Fill NaNs with inf values so the output values are not rejected as outliers
+            lb_series = lb_series.fillna(-np.inf)
+            ub_series = ub_series.fillna(np.inf)
 
-                # boolean series to keep track of outliers
-                outlier_flag = ~((lb_series <= output_series) & (output_series <= ub_series))
+            # boolean series to keep track of outliers
+            outlier_flag = ~((lb_series <= output_series) & (output_series <= ub_series))
 
-                for ix in outlier_flag.index:
-                    if outlier_flag[ix]:
-                        self.outlier_arr[self._data.index.get_loc(ix)] = True
-                self.outlier_df['outlier'] = self.outlier_arr
+            for ix in outlier_flag.index:
+                if outlier_flag[ix]:
+                    self.outlier_arr[self._data.index.get_loc(ix)] = True
+            self.outlier_df['outlier'] = self.outlier_arr
 
         return self.outlier_df[self.outlier_df['outlier'] == True].index
 
