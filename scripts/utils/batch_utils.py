@@ -30,7 +30,7 @@ class Outlier(object):
 
         # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
         # 'datadate' format intact
-        self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
+        self._data.loc[:, 'datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
 
     def _get_output_series(self, gvkey):
         """
@@ -68,10 +68,10 @@ class Outlier(object):
 
                 # Fill NaNs with inf values so the output values are not rejected as outliers
                 lb_series = lb_series.fillna(-np.inf)
-                ub_series = ub_series.filla(np.inf)
+                ub_series = ub_series.fillna(np.inf)
 
                 # boolean series to keep track of outliers
-                outlier_flag = ~((lb_series <= output_series) * (output_series <= ub_series))
+                outlier_flag = ~((lb_series <= output_series) & (output_series <= ub_series))
 
                 for ix in outlier_flag.index:
                     if outlier_flag[ix]:
@@ -85,7 +85,7 @@ class Outlier(object):
         Removes the outlier indices collected from _get_outlier_idx
         :return: start_indices, end_indices
         """
-        outlier_idx = self._get_outlier_idxs()
+        outlier_idx = self._get_outlier_idxs(confidence_level=self.confidence_level, window=self.window)
         new_start_indices = []
         new_end_indices = []
 

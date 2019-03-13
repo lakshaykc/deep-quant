@@ -681,7 +681,8 @@ class BatchGenerator(object):
         if os.path.isfile(os.path.join(cache_dir, fname)):
             lb_df, ub_df = pickle.load(open(os.path.join(cache_dir, fname)), 'rb')
         else:
-            lb_df, ub_df = self.outlier.get_outlier_bounds_for_preds()
+            lb_df, ub_df = self.outlier.get_outlier_bounds_for_preds(confidence_level=self._config.outlier_conf_lvl,
+                                                                     window=self._config.outlier_window)
             if not os.path.isdir(cache_dir):
                 os.makedirs(cache_dir)
 
