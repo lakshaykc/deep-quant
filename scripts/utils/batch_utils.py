@@ -32,28 +32,67 @@ class Outlier(object):
         # 'datadate' format intact
         self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
 
-    def _get_outlier_idxs(self, method):
-        """
-        Returns indices of outliers specified via method.
-        :param method: string, choose from 'normal',rolling_std,rolling_stationary
-        :return: List of indices of outliers
-        """
-        if method == 'normal':
-            return self._normal_method(confidence_level=self.confidence_level)
-        elif method == 'rolling_stationary':
-            return self._rolling_stationary(confidence_level=self.confidence_level, window=self.window)
-        elif method == 'rolling_std':
-            return self._rolling_std(confidence_level=self.confidence_level, window=self.window)
-        else:
-            raise ValueError("Invalid method name")
+        # Trim the data outside the date ranges
+        print("Before trim, data shape:")
+        print(self._data.shape)
+        self._data = self._trim_data(self._data, self._start_date, self._end_date, self._max_unrollings)
+        print("After trim, data shape:")
+        print(self._data.shape)
 
-    def _remove_outlier(self, method):
+    def _get_output_series(self, gvkey):
+        """
+        Returns pandas series for the given output (oiadpq_ttm) for the gvkey
+        :param gvkey:
+        :return: pandas series
+        """
+        df = self.fin_col_df[self._data['gvkey'] == gvkey]
+        return df['oiadpq_ttm']
+
+    def _get_outlier_idxs(self, confidence_level=0.999, window=2):
+        """
+        Identifies the outliers based on rolling mean and std dev and returns index of outliers
+        :param confidence_level:
+        :param window: window size for rolling computation
+        :return: indices of outliers
+        """
+        window = int(self._stride * window)
+        z_score = st.norm.ppf(confidence_level)
+        t = time.time()
+
+        for i, gvkey in enumerate(self._data.gvkey.unique()):
+            if i % 100 == 0:
+                print(i, time.time() - t)
+                t = time.time()
+
+                output_series = self._get_output_series(gvkey=gvkey)
+
+                roll_mean = output_series.rolling(window, min_periods=1).mean()
+                dev = z_score * output_series.rolling(window).std()
+
+                # Identify outliers based on lb and ub
+                lb_series = roll_mean - dev
+                ub_series = roll_mean + dev
+
+                # Fill NaNs with inf values so the output values are not rejected as outliers
+                lb_series = lb_series.fillna(-np.inf)
+                ub_series = ub_series.filla(np.inf)
+
+                # boolean series to keep track of outliers
+                outlier_flag = ~((lb_series <= output_series) * (output_series <= ub_series))
+
+                for ix in outlier_flag.index:
+                    if outlier_flag[ix]:
+                        self.outlier_arr[self._data.index.get_loc(ix)] = True
+                self.outlier_df['outlier'] = self.outlier_arr
+
+        return self.outlier_df[self.outlier_df['outlier'] == True].index
+
+    def _remove_outlier(self):
         """
         Removes the outlier indices collected from _get_outlier_idx
-        :param method: string, choose from 'normal',rolling_std,rolling_stationary
         :return: start_indices, end_indices
         """
-        outlier_idx = self._get_outlier_idxs(method=method)
+        outlier_idx = self._get_outlier_idxs()
         new_start_indices = []
         new_end_indices = []
 
@@ -76,163 +115,19 @@ class Outlier(object):
         print("Indices after outliers removed: %i" % len(self._start_indices))
         return self._start_indices, self._end_indices
 
-    def _get_growth_rate(self, gvkey):
-        """
-        Creates the growth rate series from oiadpq with a period of 1. Return growth rate series, mean and std.
-        Mean and std are calculated excluding nan, inf values
-        :param gvkey:
-        :return: growth rate pandas series, mean, std
-        """
-        # Slice a local copy of the gvkey dataframe and identify outliers based on growth rates of oiadpq
-        df = self.fin_col_df[self._data['gvkey'] == gvkey]
-        growth_rate = df['oiadpq_ttm'] / df['oiadpq_ttm'].shift(periods=1)
-        # Get mean excluding nan, inf
-        reduced_gr = growth_rate[~growth_rate.isin([np.nan, np.inf, -np.inf])]
-        mean = reduced_gr.mean()
-        std = reduced_gr.std()
-        growth_rate = growth_rate.fillna(mean)
-        # Replace inf and -nf with large value as they are likely to be outliers. They should not be ignored
-        growth_rate = growth_rate.replace(np.inf, np.nan)
-        growth_rate = growth_rate.replace(-np.inf, np.nan)
-
-        return growth_rate, mean, std
-
-    def _normal_method(self, confidence_level=0.975):
-        """
-        Identifies the outlier based on normal distribution of growth rates and confidence level.
-        Mean and std dev of the complete series for a gvkey is used (not the rolling mean)
-        :return: List of indices where feature vector is an outlier
-        """
-        z_score = st.norm.ppf(confidence_level)
-        t = time.time()
-
-        for i, gvkey in enumerate(self._data.gvkey.unique()):
-            if i % 100 == 0:
-                print(i, time.time() - t)
-                t = time.time()
-
-            growth_rate, mean, std = self._get_growth_rate(gvkey=gvkey)
-            growth_rate = growth_rate.fillna(1e8)
-
-            if growth_rate.size <= 1:
-                continue
-
-            # Calculate the outliers based on z-score
-            growth_rt_outlier = [x < mean - z_score * std or x > mean + z_score * std for x in growth_rate.values]
-            growth_rt_outlier = pd.Series(growth_rt_outlier, index=growth_rate.index)
-
-            for ix in growth_rt_outlier.index:
-                if growth_rt_outlier[ix]:
-                    self.outlier_arr[self._data.index.get_loc(ix)] = True
-            self.outlier_df['outlier'] = self.outlier_arr
-
-        return self.outlier_df[self.outlier_df['outlier'] == True].index
-
-    def _rolling_stationary(self, confidence_level=0.975, window=3):
-        """
-        Identifies outliers based on normal distribution of residuals around rolling mean
-        :param confidence_level: confidence level for classifying outliers
-        :param window: window size for rolling mean in years. The metric is internally multiplied by stride
-        :return: List of indices where feature vector is an outlier
-        """
-        window = int(self._stride * window)
-        z_score = st.norm.ppf(confidence_level)
-        t = time.time()
-
-        for i, gvkey in enumerate(self._data.gvkey.unique()):
-            if i % 100 == 0:
-                print(i, time.time() - t)
-                t = time.time()
-
-            growth_rate, mean, std = self._get_growth_rate(gvkey=gvkey)
-            # growth_rate has np.nan inplace of inf or -inf
-
-            if growth_rate.size <= 1:
-                continue
-
-            # rolling computations
-            growth_rate_rolling_mean = growth_rate.rolling(window, min_periods=1).mean()
-            residuals = growth_rate - growth_rate_rolling_mean
-
-            # calculate the outliers based on residuals
-            # Here is the main difference from _normal_method. In this method, we take the residuals of the
-            # rolling mean and use that for computing std dev. In _normal_method, std dev of growth_rate is used
-            # which is for the whole series and not just the window size
-            std = np.std(residuals.values)
-            growth_rate = growth_rate.fillna(1e8)
-            growth_rt_outlier = [y < mean - z_score * std or y > mean + z_score * std for y, mean in
-                                 zip(growth_rate.values, growth_rate_rolling_mean.values)]
-            growth_rt_outlier = pd.Series(growth_rt_outlier, index=growth_rate.index)
-
-            for ix in growth_rt_outlier.index:
-                if growth_rt_outlier[ix]:
-                    self.outlier_arr[self._data.index.get_loc(ix)] = True
-            self.outlier_df['outlier'] = self.outlier_arr
-
-        return self.outlier_df[self.outlier_df['outlier'] == True].index
-
-    def _rolling_std(self, confidence_level=0.975, window=3):
-        """
-        Identifies outliers based on normal distribution of residuals around rolling mean with rolling std
-        :param confidence_level: confidence level for classifying outliers
-        :param window: window size for rolling mean in years. The metric is internally multiplied by stride
-        :return: List of indices where feature vector is an outlier
-        """
-        window = int(self._stride * window)
-        z_score = st.norm.ppf(confidence_level)
-        t = time.time()
-
-        for i, gvkey in enumerate(self._data.gvkey.unique()):
-            if i % 100 == 0:
-                print(i, time.time() - t)
-                t = time.time()
-
-            growth_rate, mean, std = self._get_growth_rate(gvkey=gvkey)
-            # growth_rate has np.nan inplace of inf or -inf
-
-            if growth_rate.size <= 1:
-                continue
-
-            # rolling computations
-            growth_rate_rolling_mean = growth_rate.rolling(window, min_periods=1).mean()
-            residuals = growth_rate - growth_rate_rolling_mean
-
-            # calculate the outliers based on residuals
-            # Here is the main difference from _normal_method. In this method, we take the residuals of the
-            # rolling mean and use that for computing std dev. In _normal_method, std dev of growth_rate is used
-            # which is for the whole series and not just the window size
-
-            # Rolling std
-            std = residuals.rolling(window).std()
-            # If min_periods is not defined, there will NaNs as the window size hasn't been reached.
-            # Lower and upper bounds for these values should be accomodative and not mark these points
-            # as outliers. There isn't enough data for it. Hence std is set to very large value
-            std = std.fillna(1e12)
-
-            growth_rate = growth_rate.fillna(1e8)
-            growth_rt_outlier = [y < mean - z_score * std or y > mean + z_score * std for y, mean, std in
-                                 zip(growth_rate.values, growth_rate_rolling_mean.values, std.values)]
-            growth_rt_outlier = pd.Series(growth_rt_outlier, index=growth_rate.index)
-
-            for ix in growth_rt_outlier.index:
-                if growth_rt_outlier[ix]:
-                    self.outlier_arr[self._data.index.get_loc(ix)] = True
-            self.outlier_df['outlier'] = self.outlier_arr
-
-        return self.outlier_df[self.outlier_df['outlier'] == True].index
-
-    def get_indices(self, method):
+    def get_indices(self, train=True):
         """
         Runs outlier removal method and returns start and end indices
-        :param method: string, choose from 'normal',rolling_std,rolling_stationary
+        :param train: True, if outlier removal is applicable to training data
         :return: start_indices, end_indices
         """
-        return self._remove_outlier(method=method)
+        assert train is True
+        return self._remove_outlier()
 
-    def get_outlier_bounds_for_preds(self, confidence_level=0.995, window=3, std_type='expanding'):
+    def get_outlier_bounds_for_preds(self, confidence_level=0.999, window=2):
         """
         Determines upper and lower bounds for outlier detection based on the history of target field. For every date
-        and gvkey, growth rates of the target fields are used to create the bounds using rolling stationary method.
+        and gvkey, output fields are used to create the bounds using rolling stationary method.
         The history goes as far as window_size * stride
 
          Returns dataframes for lower and and upper bounds with dates as index and gvkeys as column names (similar to
@@ -241,15 +136,9 @@ class Outlier(object):
         :return: [lower_bound_dataframe, upper_bound_dataframe]
         """
 
-        # Trim the data outside the date ranges
-        print("Before ...")
-        print(self._data.shape)
-        self._data = self._trim_data(self._data, self._start_date, self._end_date, self._max_unrollings)
-        print("After ...")
-        print(self._data.shape)
-
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
+        print('Unique gvkeys:')
         print(unique_gvkeys.shape)
         df_lb = pd.DataFrame()
         df_ub = pd.DataFrame()
@@ -265,41 +154,19 @@ class Outlier(object):
                 print(i, time.time() - t)
                 t = time.time()
 
-            # Slice a local copy of the gvkey dataframe and identify outliers based on growth rates of oiadpq
-            df_gvkey = self._data[['datadate_obj', 'gvkey', 'oiadpq_ttm']][self._data['gvkey'] == gvkey]
-            df_gvkey = df_gvkey.set_index('datadate_obj', drop=True)
-            output_series = df_gvkey['oiadpq_ttm']
-            growth_rate = (df_gvkey['oiadpq_ttm'] / df_gvkey['oiadpq_ttm'].shift(periods=1)) - 1.
-            # Get mean excluding nan, inf
-            reduced_gr = growth_rate[~growth_rate.isin([np.nan, np.inf, -np.inf])]
-            mean = reduced_gr.mean()
-            growth_rate = growth_rate.fillna(mean)
+            output_series = self._get_output_series(gvkey=gvkey)
 
-            # Replace inf and -inf with large value as they are likely to be outliers. They should NOT be ignored
-            growth_rate = growth_rate.replace(np.inf, mean)
-            growth_rate = growth_rate.replace(-np.inf, mean)
+            roll_mean = output_series.rolling(window, min_periods=1).mean()
+            std = output_series.rolling(window).std()
 
-            if growth_rate.size <= 1:
-                continue
+            # Create the lb, ub output series
+            lb_series = roll_mean - z_score * std
+            ub_series = roll_mean + z_score * std
 
-            # rolling computations
-            growth_rate_rolling_mean = growth_rate.rolling(window, min_periods=1).mean()
-            residuals = growth_rate - growth_rate_rolling_mean
-            residuals = residuals.abs()
-
-            if std_type == 'expanding':
-                std = residuals.expanding(window).std()
-            elif std_type == 'rolling':
-                std = residuals.rolling(window).std()
-
-            # Create the lb, ub growth series
-            lb_gr_series = growth_rate_rolling_mean - z_score * std
-            ub_gr_series = growth_rate_rolling_mean + z_score * std
-
-            # Apply growth rate to output values to create lower and upper bounds for outputs
-            base_output_series = output_series.shift(periods=1)
-            lb_series = base_output_series + base_output_series.abs() * lb_gr_series
-            ub_series = base_output_series + base_output_series.abs() * ub_gr_series
+            # Replace NaNs with inf in std series. The NaNs are due to rolling window. These values should always
+            # be kept and there is not enough data to say if they are outliers or not.
+            lb_series = lb_series.fillna(-np.inf)
+            ub_series = ub_series.fillna(np.inf)
 
             # Rename the series
             lb_series, ub_series = lb_series.rename(gvkey), ub_series.rename(gvkey)

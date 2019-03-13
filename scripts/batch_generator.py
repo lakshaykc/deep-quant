@@ -88,7 +88,7 @@ class BatchGenerator(object):
         if remove_outliers:
             print("Removing outliers for training")
             idxs_before_removal = 1.*len(self._start_indices)
-            self._start_indices, self._end_indices = self.outlier.get_indices(method=self._config.outlier_method)
+            self._start_indices, self._end_indices = self.outlier.get_indices()
             self._reset_index_cursor()
 
             print("Frac of points removed: %2.4f" % (1.0 - len(self._start_indices)/idxs_before_removal))

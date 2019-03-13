@@ -121,8 +121,6 @@ def get_configs():
     configs.DEFINE_float("huber_delta", 1.0, "delta for huber loss")
     configs.DEFINE_float("outlier_conf_lvl", 0.975, "Outlier confidence level")
     configs.DEFINE_float("outlier_window", 3, "Window for rolling calculations for outliers")
-    configs.DEFINE_string("outlier_method", 'rolling_stationary',
-                          "Outlier removal method. Select from normal, rolling_stationary, rolling_std")
 
     c = configs.ConfigValues()
 
