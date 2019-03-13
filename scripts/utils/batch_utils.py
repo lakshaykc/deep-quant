@@ -32,13 +32,17 @@ class Outlier(object):
         # 'datadate' format intact
         self._data.loc[:, 'datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
 
-    def _get_output_series(self, gvkey):
+    def _get_output_series(self, gvkey, ext_data=None):
         """
         Returns pandas series for the given output (oiadpq_ttm) for the gvkey
         :param gvkey:
+        :param ext_data: external data source. Use if you don't want to use self._data
         :return: pandas series
         """
-        df = self.fin_col_df[self._data['gvkey'] == gvkey]
+        if ext_data is None:
+            df = self.fin_col_df[self._data['gvkey'] == gvkey]
+        else:
+            df = ext_data[ext_data['gvkey'] == gvkey]
         return df['oiadpq_ttm']
 
     def _get_outlier_idxs(self, confidence_level=0.999, window=2):
@@ -154,7 +158,7 @@ class Outlier(object):
                 print(i, time.time() - t)
                 t = time.time()
 
-            output_series = self._get_output_series(gvkey=gvkey)
+            output_series = self._get_output_series(gvkey=gvkey, ext_data=self._data)
 
             roll_mean = output_series.rolling(window, min_periods=1).mean()
             std = output_series.rolling(window).std()
