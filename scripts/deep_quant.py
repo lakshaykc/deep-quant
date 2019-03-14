@@ -120,7 +120,9 @@ def get_configs():
     configs.DEFINE_boolean("huber_loss", False, "Use huber loss instead of mse")
     configs.DEFINE_float("huber_delta", 1.0, "delta for huber loss")
     configs.DEFINE_float("outlier_conf_lvl", 0.975, "Outlier confidence level")
-    configs.DEFINE_float("outlier_window", 2, "Window for rolling calculations for outliers")
+    configs.DEFINE_float("outlier_window_mean", 1, "Window for rolling calculations for outliers")
+    configs.DEFINE_float("outlier_window_std", 2, "Window for rolling calculations for outliers")
+
 
     c = configs.ConfigValues()
 

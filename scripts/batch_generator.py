@@ -82,13 +82,13 @@ class BatchGenerator(object):
         self._config = config # save this around for train_batches() method
 
         self.outlier = Outlier(self._data, self._start_indices, self._end_indices, self._fin_colidxs,
-                               self._stride, self._config.outlier_conf_lvl, self._config.outlier_window,
-                               self._start_date, self._end_date, self._max_unrollings)
+                               self._stride, self._config.outlier_conf_lvl, self._config.outlier_window_mean,
+                               self._config.outlier_window_std, self._start_date, self._end_date, self._max_unrollings)
 
         if remove_outliers:
             print("Removing outliers for training")
             idxs_before_removal = 1.*len(self._start_indices)
-            self._start_indices, self._end_indices = self.outlier.get_indices()
+            self._start_indices, self._end_indices = self.outlier.get_indices(train=self._config.train)
             self._reset_index_cursor()
 
             print("Frac of points removed: %2.4f" % (1.0 - len(self._start_indices)/idxs_before_removal))
@@ -681,8 +681,7 @@ class BatchGenerator(object):
         if os.path.isfile(os.path.join(cache_dir, fname)):
             lb_df, ub_df = pickle.load(open(os.path.join(cache_dir, fname)), 'rb')
         else:
-            lb_df, ub_df = self.outlier.get_outlier_bounds_for_preds(confidence_level=self._config.outlier_conf_lvl,
-                                                                     window=self._config.outlier_window)
+            lb_df, ub_df = self.outlier.get_outlier_bounds_for_preds()
             if not os.path.isdir(cache_dir):
                 os.makedirs(cache_dir)
 
