@@ -183,6 +183,12 @@ class Outlier(object):
             # Rename the series
             lb_series, ub_series = lb_series.rename(gvkey), ub_series.rename(gvkey)
 
+            # Remove the dates prior to the start date which were used for rolling calculation. This is done so that
+            # The dataframe shapes of lb,ub are consistent with mse, output, target dataframes created during
+            # prediction
+            lb_series = lb_series[lb_series.index >= pd.to_datetime(self._start_date, format="%Y%m")]
+            ub_series = ub_series[ub_series.index >= pd.to_datetime(self._start_date, format="%Y%m")]
+
             # Convert series to dataframe
             df_gvkey_lb, df_gvkey_ub = lb_series.to_frame(), ub_series.to_frame()
 
