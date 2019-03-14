@@ -30,19 +30,16 @@ class Outlier(object):
 
         # Convert the datadate column to datetime object. 'datadate_obj' is the new column keeping the original
         # 'datadate' format intact
-        self._data.loc[:, 'datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
+        self._data['datadate_obj'] = pd.to_datetime(self._data['date'], format="%Y%m")
 
-    def _get_output_series(self, gvkey, ext_data=None):
+    def _get_output_series(self, gvkey):
         """
         Returns pandas series for the given output (oiadpq_ttm) for the gvkey
         :param gvkey:
         :param ext_data: external data source. Use if you don't want to use self._data
         :return: pandas series
         """
-        if ext_data is None:
-            df = self.fin_col_df[self._data['gvkey'] == gvkey]
-        else:
-            df = ext_data[ext_data['gvkey'] == gvkey]
+        df = self._data[self._data['gvkey'] == gvkey]
         return df['oiadpq_ttm']
 
     def _get_outlier_idxs(self, confidence_level=0.999, window=2):
@@ -140,6 +137,8 @@ class Outlier(object):
         print("After trim, data shape:")
         print(self._data.shape)
 
+        self._data = self._data.set_index('datadate_obj', drop=True)
+
         # Get gvkeys
         unique_gvkeys = self._data.gvkey.unique()
         print('Unique gvkeys:')
@@ -158,7 +157,7 @@ class Outlier(object):
                 print(i, time.time() - t)
                 t = time.time()
 
-            output_series = self._get_output_series(gvkey=gvkey, ext_data=self._data)
+            output_series = self._get_output_series(gvkey=gvkey)
 
             roll_mean = output_series.rolling(window, min_periods=1).mean()
             std = output_series.rolling(window).std()
