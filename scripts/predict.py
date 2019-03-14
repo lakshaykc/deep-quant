@@ -71,7 +71,6 @@ def predict(config):
     df_target = pd.DataFrame()
     df_output = pd.DataFrame()
     df_mse = pd.DataFrame()
-    df_outlier = pd.DataFrame()
 
     df_list = [df_target, df_output, df_mse]
 
@@ -96,7 +95,7 @@ def predict(config):
                 perfs[date].append(mse)
 
             if config.pretty_print_preds:
-                pretty_print_predictions( batches, batch, preds, mse)
+                pretty_print_predictions(batches, batch, preds, mse)
             elif config.print_preds:
                 print_predictions(config, batches, batch, preds, mse)
 
@@ -113,20 +112,14 @@ def predict(config):
                     assert(len(df_list) == len(values_list))
                     df_list[j] = update_df(df_list[j], date, key, values_list[j])
 
-                    # Update the outlier df by checking output_val
-                    if j == 1:
-                        df_outlier = update_outlier_df(df_outlier, date, key, output_val,
-                                                       df_outlier_lb, df_outlier_ub)
-
-        # MSE calculation with outlier removal
-        df_outlier.to_pickle('df_outlier.pkl')
-        df_mse.to_pickle('df_mse.pkl')
-
-        df_outlier = df_outlier.fillna(False)
+        # Get outlier dataframe
+        df_outlier = get_outlier_df(df_outlier_lb, df_outlier_ub, df_output)
+        total_mse_w_outlier = np.nan(df_mse.values.flatten())
         df_mse = df_mse.mask(df_outlier, other=np.nan)
         mse_date_series = df_mse.mean(axis=1)
-        total_mse = mse_date_series.mean()
-
+        total_mse = np.nan(df_mse.values.flatten())
+        print("Mse before outlier removal: %2.6f, Mse after outlier removal: %2.6f" % (total_mse_w_outlier,
+                                                                                       total_mse))
         # Save mse data to file
         if config.df_dirname:
             mse_dirname = 'mse-' + config.df_dirname
@@ -152,9 +145,9 @@ def predict(config):
             with open(config.mse_outfile,"w") as f:
                 for date in sorted(perfs):
                     mean = np.mean(perfs[date])
-                    print("%s %.6f %d"%(date,mean,len(perfs[date])),file=f)
-                total_mean = np.mean( [x for v in perfs.values() for x in v] )
-                print("Total %.6f"%(total_mean),file=f)
+                    print("%s %.6f %d" % (date, mean, len(perfs[date])), file=f)
+                total_mean = np.mean([x for v in perfs.values() for x in v])
+                print("Total %.6f" % total_mean, file=f)
             f.closed
         else:
             exit()
@@ -232,14 +225,21 @@ def update_df(df, date, key, value):
     return df
 
 
-def update_outlier_df(df, date, key, output_value, df_outlier_lb, df_outlier_ub):
-    date = pd.to_datetime(date, format="%Y%m")
-    if df_outlier_lb.loc[date, key] <= output_value <= df_outlier_ub.loc[date, key]:
-        df.loc[date, key] = False
-    else:
-        df.loc[date, key] = True
+def get_outlier_df(lb_df, ub_df, output_df):
+    """
+    Build the outlier df which a boolean where True if the value is an outlier
+    :param lb_df: lower bound df
+    :param ub_df: upper bound df
+    :param output_df: output df for the target field. Currently oiadpq_ttm is hard coded for lb and ub bounds
+    :return: boolean df same shape as output df
+    """
+    lb_df = lb_df[output_df.columns]
+    ub_df = ub_df[output_df.columns]
 
-    return df
+    assert lb_df.shape == ub_df.shape == output_df.shape
+
+    df_outlier = (output_df < lb_df) | (output_df > ub_df)
+    return df_outlier
 
 
 def get_value(batches, batch, field, predictions=None, output_field=3):
