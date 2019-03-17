@@ -679,7 +679,7 @@ class BatchGenerator(object):
                 str(self._config.end_date) + '--' + str(self._config.outlier_conf_lvl) + '.pkl'
 
         if os.path.isfile(os.path.join(cache_dir, fname)):
-            lb_df, ub_df = pickle.load(open(os.path.join(cache_dir, fname)), 'rb')
+            lb_df, ub_df = pickle.load(open(os.path.join(cache_dir, fname), 'rb'))
         else:
             lb_df, ub_df = self.outlier.get_outlier_bounds_for_preds()
             if not os.path.isdir(cache_dir):

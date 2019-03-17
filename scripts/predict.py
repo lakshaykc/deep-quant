@@ -114,10 +114,12 @@ def predict(config):
 
         # Get outlier dataframe
         df_outlier = get_outlier_df(df_outlier_lb, df_outlier_ub, df_output)
-        total_mse_w_outlier = np.nan(df_mse.values.flatten())
+        # Save the outlier df
+        df_outlier.to_pickle('df_outlier.pkl')
+        total_mse_w_outlier = np.nanmean(df_mse.values.flatten())
         df_mse = df_mse.mask(df_outlier, other=np.nan)
         mse_date_series = df_mse.mean(axis=1)
-        total_mse = np.nan(df_mse.values.flatten())
+        total_mse = np.nanmean(df_mse.values.flatten())
         print("Mse before outlier removal: %2.6f, Mse after outlier removal: %2.6f" % (total_mse_w_outlier,
                                                                                        total_mse))
         # Save mse data to file
