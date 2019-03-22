@@ -93,7 +93,7 @@ class BatchGenerator(object):
 
             print("Frac of points removed: %2.4f" % (1.0 - len(self._start_indices)/idxs_before_removal))
 
-    def _init_data(self, filename, config, validation=True, data=None, 
+    def _init_data(self, filename, config, validation=True, data=None,
                    verbose=True):
         """
         Loads data as Pandas DataFrame, saves it as ._data attribute, sets up a
@@ -117,6 +117,8 @@ class BatchGenerator(object):
         self._data = data
         self._data_len = len(data)
         assert(self._data_len)
+
+        print("Total number of records %d"%len(self._dates))
 
         # Setup data
         self._init_column_indices(config)
@@ -269,10 +271,17 @@ class BatchGenerator(object):
 
         self._aux_colidxs = get_colidxs_from_colnames(
             self._data, config.aux_fields)
- 
+
+        all_colidxs = self._fin_colidxs + self._aux_colidxs
+
         # save feature names
         colnames = self._data.columns.values
-        self._feature_names = colnames[self._fin_colidxs + self._aux_colidxs]
+        self._feature_names = colnames[all_colidxs]
+
+        # store input vector indices to NOT scale
+        dont_scale_colidxs = get_colidxs_from_colnames( self._data, config.dont_scale )
+        dont_scale_colidxs = [i for i in dont_scale_colidxs if i in all_colidxs]
+        self._dont_scale_input_idxs = [all_colidxs.index(i) for i in dont_scale_colidxs]
 
         # Set up other attributes
         colnames = list(colnames)
@@ -289,15 +298,10 @@ class BatchGenerator(object):
 
         # Set up target index
         idx = colnames.index(config.target_field)
-        if config.target_field == 'target':
-            config.target_idx = 0
-            self._num_outputs = config.num_outputs = 1
-            self._price_target_idx = idx
-        else:
-            config.target_idx = idx - self._fin_colidxs[0]
-            self._num_outputs = config.num_outputs = self._num_inputs \
-                                                     - len(self._aux_colidxs)
-            self._price_target_idx = -1
+        config.target_idx = idx - self._fin_colidxs[0]
+        self._num_outputs = config.num_outputs = \
+            self._num_inputs - len(self._aux_colidxs)
+        self._price_target_idx = -1
 
         assert(config.target_idx >= 0)
 
@@ -413,9 +417,9 @@ class BatchGenerator(object):
                 assert( idx < self._data_len )
                 date = self._dates[idx]
                 key = self._keys[idx]
+                attr.append((key,date))
                 next_idx = idx + forecast_n
                 next_key = self._keys[next_idx] if next_idx < len(self._keys) else ""
-                attr.append((key,date))
                 x[b,0:len1] = self._get_feature_vector(end_idx,idx)
                 if len2 > 0:
                     x[b,len1:len1+len2] = self._get_aux_vector(idx)
@@ -499,6 +503,12 @@ class BatchGenerator(object):
             params = dict()
             params['center'] = scaler.center_ if hasattr(scaler,'center_') else scaler.mean_
             params['scale'] = scaler.scale_
+
+            # Do not scale these features
+            for i in self._dont_scale_input_idxs:
+                params['center'][i] = 0.0
+                params['scale'][i] = 1.0
+
             self._scaling_params = params
 
         return self._scaling_params
@@ -599,11 +609,20 @@ class BatchGenerator(object):
                 if verbose is True:
                     print("done in %.2f seconds."%(time.time() - start_time))
 
-    def _valid_dates(self):
+    def _train_dates(self):
         data = self._data
         dates = list(set(data[self._config.date_field]))
         dates.sort()
         split_date = self._config.split_date
+        train_dates = [d for d in dates if d < split_date]
+        return train_dates
+
+    def _valid_dates(self):
+        data = self._data
+        dates = list(set(data[self._config.date_field]))
+        dates.sort()
+        years = 100*((self._config.min_unrollings*self._config.stride)//12)
+        split_date = self._config.split_date - years
         valid_dates = [d for d in dates if d >= split_date]
         return valid_dates
 
@@ -615,20 +634,21 @@ class BatchGenerator(object):
         """
         config = self._config
         if config.split_date is not None:
-            valid_dates = self._valid_dates()
-            indexes = self._data[config.date_field].isin(valid_dates)
+            train_dates = self._train_dates()
+            indexes = self._data[config.date_field].isin(train_dates)
+            train_data = self._data[indexes]
             if verbose is True:
-                print("Training period: %s to %s"%(config.start_date,min(valid_dates)))
+                print("Training period: %s to %s"%(min(train_dates),max(train_dates)))
         else:
             valid_keys = list(self._validation_set.keys())
             indexes = self._data[config.key_field].isin(valid_keys)
+            train_data = self._data[~indexes]
             if verbose is True:
                 all_keys = sorted(set(self._data[config.key_field]))
                 print("Num training entities: %d"%(len(all_keys)-len(valid_keys)))
-        train_data = self._data[~indexes]
         assert(len(train_data))
         return BatchGenerator("", config, validation=False,
-                              data=train_data, is_training_only=True, remove_outliers=True)
+                              data=train_data, is_training_only=True)
 
     def valid_batches(self, verbose=False):
         """
@@ -652,7 +672,8 @@ class BatchGenerator(object):
         valid_data = self._data[indexes]
         assert(len(valid_data))
         return BatchGenerator("", config, validation=False,
-                              data=valid_data, remove_outliers=True)
+                              data=valid_data)
+
 
     def shuffle(self):
         # We cannot shuffle until the entire dataset is cached
@@ -734,9 +755,9 @@ class Batch(object):
     def attribs(self):
         return self._attribs
 
-    #@property
-    #def size(self):
-    #    return len(self._attribs)
+    @property
+    def size(self):
+        return len(self._seq_lengths)
 
     @property
     def normalizers(self):
