@@ -648,7 +648,7 @@ class BatchGenerator(object):
                 print("Num training entities: %d"%(len(all_keys)-len(valid_keys)))
         assert(len(train_data))
         return BatchGenerator("", config, validation=False,
-                              data=train_data, is_training_only=True)
+                              data=train_data, is_training_only=True, remove_outliers=True)
 
     def valid_batches(self, verbose=False):
         """
@@ -672,7 +672,7 @@ class BatchGenerator(object):
         valid_data = self._data[indexes]
         assert(len(valid_data))
         return BatchGenerator("", config, validation=False,
-                              data=valid_data)
+                              data=valid_data, remove_outliers=True)
 
 
     def shuffle(self):
